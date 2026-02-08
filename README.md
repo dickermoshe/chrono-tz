@@ -177,7 +177,8 @@ CHRONO_TZ_TIMEZONE_FILTER="(Europe/London|US/.*)" cargo build
 This can significantly reduce the size of the generated database, depending on how many timezones
 you are interested in. Wikipedia has an [article listing the timezone names][wiki-list].
 
-The filtering applied is liberal; if you use a pattern such as "US/.*" then `chrono-tz` will include all the zones that are linked, such as "America/Denver", not just "US/Mountain".
+The filtering applied is liberal; if you use a pattern such as "US/.*" then `chrono-tz` will
+include all the zones that are linked, such as "America/Denver", not just "US/Mountain".
 
 ### Limiting the Table to a Timestamp Range
 
