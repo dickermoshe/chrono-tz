@@ -573,7 +573,7 @@ impl TimestampRange {
                 (Some(start), None) => Ok(TimestampRange::Start(start)),
                 (None, Some(end)) => Ok(TimestampRange::End(end)),
                 (None, None) => Err(format!(
-                    "timestamp range {input:?} must have at least a start or end value, e.g. 0.. or ..2147483648"
+                    "timestamp range {input:?} must have at least a start or end value, e.g. 0.. or ..2147483648 or 0..2147483648"
                 )),
             }
     }
