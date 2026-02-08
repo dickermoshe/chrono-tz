@@ -676,3 +676,204 @@ pub fn main(dir: &Path, _filter: bool, _filter_by_range: bool, _uncased: bool) {
     let version = detect_iana_db_version();
     write_directory_file(&mut directory_file, &table, &version).unwrap();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::TimestampRange;
+    use super::*;
+    use parse_zoneinfo::transitions::{FixedTimespan, FixedTimespanSet};
+
+    fn span(name: &str, offset: i64) -> FixedTimespan {
+        FixedTimespan {
+            utc_offset: offset,
+            dst_offset: 0,
+            name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn parses_exclusive_time_range() {
+        assert_eq!(
+            TimestampRange::parse("100..200"),
+            Ok(TimestampRange::StartEnd(100, 200))
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_time_range() {
+        assert!(TimestampRange::parse("100-200").is_err());
+        assert!(TimestampRange::parse("100..=200").is_err());
+        assert!(TimestampRange::parse("..").is_err());
+        assert!(TimestampRange::parse(".. ").is_err());
+        assert!(TimestampRange::parse("abc..200").is_err());
+        assert!(TimestampRange::parse("100..def").is_err());
+        assert!(TimestampRange::parse("200..200").is_err());
+        assert!(TimestampRange::parse("300..200").is_err());
+    }
+
+    #[test]
+    fn parses_start_only_time_range() {
+        assert_eq!(
+            TimestampRange::parse("100.."),
+            Ok(TimestampRange::Start(100))
+        );
+    }
+
+    #[test]
+    fn parses_end_only_time_range() {
+        assert_eq!(TimestampRange::parse("..200"), Ok(TimestampRange::End(200)));
+    }
+
+    #[test]
+    fn parses_time_range_with_whitespace() {
+        assert_eq!(
+            TimestampRange::parse("   -100..200   "),
+            Ok(TimestampRange::StartEnd(-100, 200))
+        );
+        assert_eq!(
+            TimestampRange::parse("   -100..   "),
+            Ok(TimestampRange::Start(-100))
+        );
+        assert_eq!(
+            TimestampRange::parse("   ..200   "),
+            Ok(TimestampRange::End(200))
+        );
+        assert!(TimestampRange::parse("   ..   ").is_err());
+    }
+
+    #[test]
+    fn parses_time_range_i64_bounds() {
+        assert_eq!(
+            TimestampRange::parse("-9223372036854775808..9223372036854775807"),
+            Ok(TimestampRange::StartEnd(i64::MIN, i64::MAX))
+        );
+        assert!(TimestampRange::parse("-9223372036854775809..9223372036854775807").is_err());
+    }
+
+    #[test]
+    fn trim_resets_first_and_drops_out_of_range_transitions() {
+        let timespans = FixedTimespanSet {
+            first: span("A", 0),
+            rest: vec![
+                (-10, span("B", 1)),
+                (100, span("C", 2)),
+                (31_536_100, span("D", 3)),
+                (63_072_000, span("E", 4)),
+            ],
+        };
+
+        let trimmed = TimestampRange::StartEnd(0, 31_536_000).trim_timespans(timespans);
+
+        assert_eq!(
+            trimmed,
+            FixedTimespanSet {
+                first: span("B", 1),
+                rest: vec![(100, span("C", 2))],
+            }
+        );
+    }
+
+    #[test]
+    fn trim_start_only_drops_earlier_transitions() {
+        let timespans = FixedTimespanSet {
+            first: span("A", 0),
+            rest: vec![
+                (-10, span("B", 1)),
+                (100, span("C", 2)),
+                (31_536_100, span("D", 3)),
+            ],
+        };
+
+        let trimmed = TimestampRange::Start(0).trim_timespans(timespans);
+
+        assert_eq!(
+            trimmed,
+            FixedTimespanSet {
+                first: span("B", 1),
+                rest: vec![(100, span("C", 2)), (31_536_100, span("D", 3)),],
+            }
+        );
+    }
+
+    #[test]
+    fn trim_end_only_keeps_initial_history_until_end() {
+        let timespans = FixedTimespanSet {
+            first: span("A", 0),
+            rest: vec![
+                (-10, span("B", 1)),
+                (100, span("C", 2)),
+                (31_536_100, span("D", 3)),
+            ],
+        };
+
+        let trimmed = TimestampRange::End(0).trim_timespans(timespans);
+
+        assert_eq!(
+            trimmed,
+            FixedTimespanSet {
+                first: span("A", 0),
+                rest: vec![(-10, span("B", 1))],
+            }
+        );
+    }
+
+    #[test]
+    fn trim_excludes_transition_exactly_at_low_and_high() {
+        let timespans = FixedTimespanSet {
+            first: span("A", 0),
+            rest: vec![(10, span("B", 1)), (20, span("C", 2)), (30, span("D", 3))],
+        };
+
+        let trimmed = TimestampRange::StartEnd(20, 30).trim_timespans(timespans);
+
+        assert_eq!(
+            trimmed,
+            FixedTimespanSet {
+                first: span("C", 2),
+                rest: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn trim_keeps_first_when_all_transitions_are_after_low() {
+        let timespans = FixedTimespanSet {
+            first: span("A", 0),
+            rest: vec![(10, span("B", 1)), (20, span("C", 2))],
+        };
+
+        let trimmed = TimestampRange::Start(0).trim_timespans(timespans.clone());
+
+        assert_eq!(trimmed, timespans);
+    }
+
+    #[test]
+    fn trim_sets_first_to_latest_when_all_transitions_before_low() {
+        let timespans = FixedTimespanSet {
+            first: span("A", 0),
+            rest: vec![(10, span("B", 1)), (20, span("C", 2))],
+        };
+
+        let trimmed = TimestampRange::Start(100).trim_timespans(timespans);
+
+        assert_eq!(
+            trimmed,
+            FixedTimespanSet {
+                first: span("C", 2),
+                rest: vec![]
+            }
+        );
+    }
+
+    #[test]
+    fn trim_with_no_transitions_is_stable() {
+        let timespans = FixedTimespanSet {
+            first: span("A", 0),
+            rest: vec![],
+        };
+
+        let trimmed = TimestampRange::StartEnd(0, 100).trim_timespans(timespans.clone());
+
+        assert_eq!(trimmed, timespans);
+    }
+}
