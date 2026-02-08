@@ -144,6 +144,7 @@ chrono-tz = { version = "0.5", default-features = false }
 If you are using this library in an environment with limited program
 space, such as a microcontroller, take note that you will also likely
 need to enable optimizations and Link Time Optimization:
+
 ```toml
 [profile.dev]
 opt-level = 2
@@ -177,7 +178,7 @@ CHRONO_TZ_TIMEZONE_FILTER="(Europe/London|US/.*)" cargo build
 This can significantly reduce the size of the generated database, depending on how many timezones
 you are interested in. Wikipedia has an [article listing the timezone names][wiki-list].
 
-The filtering applied is liberal; if you use a pattern such as "US/.*" then `chrono-tz` will
+The filtering applied is liberal; if you use a pattern such as "US/.\*" then `chrono-tz` will
 include all the zones that are linked, such as "America/Denver", not just "US/Mountain".
 
 ### Limiting the Table to a Timestamp Range
@@ -186,7 +187,7 @@ If you only care about timezone behavior within a bounded period, enable `filter
 `CHRONO_TZ_TIME_RANGE` to a Rust-style timestamp range in Unix seconds:
 
 ```sh
-# Only keep data from 2020-01-01 to 2030-01-01 UTC
+# Only keep data from 2020-01-01 to 2030-01-01 UTC (Exclusive)
 CHRONO_TZ_TIME_RANGE="1577836800..1893456000" cargo build
 ```
 
@@ -200,7 +201,7 @@ CHRONO_TZ_TIME_RANGE="1577836800.." cargo build
 CHRONO_TZ_TIME_RANGE="..1577836800" cargo build
 ```
 
-For timestamps outside the configured range, chrono-tz uses the time zone in effect at the nearest point within the configured range (for example, if your range ends on January 1, 2030, then a date in July 2035 will use whatever offset and abbreviation were in effect on January 1, 2030).
+For timestamps outside the configured range, chrono-tz will use the time zone in effect at the nearest point within the configured range. For example, if your range ends on January 1, 2030, then a date in July 2035 will use which ever was in effect on January 1, 2030.
 
 [IANA database]: http://www.iana.org/time-zones
 [wiki-list]: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
