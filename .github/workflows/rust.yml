@@ -89,6 +89,15 @@ jobs:
           cargo package -p chrono-tz --config "source.vendored-sources.directory = 'vendor'" \
              --config "source.crates-io.replace-with = 'vendored-sources'"
 
+      # chrono-tz-build
+      - name: Test chrono-tz-build
+        if: ${{ matrix.run_lint }}
+        run: cargo test -p chrono-tz-build --color=always -- --color=always
+
+      - name: Test chrono-tz-build all features
+        if: ${{ matrix.run_lint }}
+        run: cargo test -p chrono-tz-build --all-features --color=always -- --color=always
+
   lint:
     runs-on: ubuntu-latest
 
