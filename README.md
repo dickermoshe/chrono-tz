@@ -156,13 +156,19 @@ lto = true
 Otherwise, the additional binary size added by this library may overflow
 available program space and trigger a linker error.
 
-## Limiting the Timezone Table to Zones of Interest
+## Limiting the Generated Timezone Table
 
-`Chrono-tz` by default generates timezones for all entries in the [IANA database][]. If you are
-interested in only a few timezones you can use enable the `filter-by-regex` feature and set an
-environment variable to select them. The environment variable is called
-`CHRONO_TZ_TIMEZONE_FILTER` and is a regular expression. It should be specified in your top-level
-build:
+`Chrono-tz` by default generates timezone data for all entries in the [IANA database][] from the years 1800 to 2100. If you are
+only interested in a subset, you can reduce the size of the generated database in two ways:
+
+- Select only the timezone names you care about.
+- Limit the generated transition data to a bounded timestamp range.
+
+Both options are controlled via environment variables and should be set in your top-level build.
+
+### Limiting the Table to Zones of Interest
+
+Enable the `filter-by-regex` feature and set `CHRONO_TZ_TIMEZONE_FILTER` to a regular expression matching the timezone names you want:
 
 ```sh
 CHRONO_TZ_TIMEZONE_FILTER="(Europe/London|US/.*)" cargo build
@@ -171,8 +177,29 @@ CHRONO_TZ_TIMEZONE_FILTER="(Europe/London|US/.*)" cargo build
 This can significantly reduce the size of the generated database, depending on how many timezones
 you are interested in. Wikipedia has an [article listing the timezone names][wiki-list].
 
-The filtering applied is liberal; if you use a pattern such as "US/.*" then `chrono-tz` will
-include all the zones that are linked, such as "America/Denver", not just "US/Mountain".
+The filtering applied is liberal; if you use a pattern such as "US/.*" then `chrono-tz` will include all the zones that are linked, such as "America/Denver", not just "US/Mountain".
+
+### Limiting the Table to a Timestamp Range
+
+If you only care about timezone behavior within a bounded period, enable `filter-by-range` and set
+`CHRONO_TZ_TIME_RANGE` to a Rust-style timestamp range in Unix seconds:
+
+```sh
+# Only keep data from 2020-01-01 to 2030-01-01 UTC
+CHRONO_TZ_TIME_RANGE="1577836800..1893456000" cargo build
+```
+
+You may also omit the start or end of the range to only keep data before or after a certain time.
+
+```sh
+# Only keep data from 2020-01-01 UTC onwards
+CHRONO_TZ_TIME_RANGE="1577836800.." cargo build
+
+# Only keep data up to 2020-01-01 UTC
+CHRONO_TZ_TIME_RANGE="..1577836800" cargo build
+```
+
+For timestamps outside the configured range, chrono-tz uses the time zone in effect at the nearest point within the configured range (for example, if your range ends on January 1, 2030, then a date in July 2035 will use whatever offset and abbreviation were in effect on January 1, 2030).
 
 [IANA database]: http://www.iana.org/time-zones
 [wiki-list]: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones

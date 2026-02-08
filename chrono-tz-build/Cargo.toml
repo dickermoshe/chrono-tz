@@ -13,6 +13,7 @@ documentation = "https://docs.rs/chrono-tz-build"
 
 [features]
 filter-by-regex = ["regex"]
+filter-by-range = []
 case-insensitive = ["uncased", "phf_shared/uncased"]
 regex = ["dep:regex"]
 

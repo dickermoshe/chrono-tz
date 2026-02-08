@@ -11,13 +11,15 @@ use std::path::{Path, PathBuf};
 use parse_zoneinfo::line::Line;
 use parse_zoneinfo::structure::{Child, Structure};
 use parse_zoneinfo::table::{Table, TableBuilder};
-use parse_zoneinfo::transitions::FixedTimespan;
 use parse_zoneinfo::transitions::TableTransitions;
+use parse_zoneinfo::transitions::{FixedTimespan, FixedTimespanSet};
 use parse_zoneinfo::FILES;
 
 /// The name of the environment variable which possibly holds the filter regex.
 #[cfg(feature = "filter-by-regex")]
 pub const FILTER_ENV_VAR_NAME: &str = "CHRONO_TZ_TIMEZONE_FILTER";
+#[cfg(feature = "filter-by-range")]
+pub const TIME_RANGE_ENV_VAR_NAME: &str = "CHRONO_TZ_TIME_RANGE";
 
 // This function is needed until zoneinfo_parse handles comments correctly.
 // Technically a '#' symbol could occur between double quotes and should be
@@ -78,7 +80,12 @@ fn convert_bad_chars(name: &str) -> String {
 // The timezone file contains impls of `Timespans` for all timezones in the
 // database. The `Wrap` wrapper in the `timezone_impl` module then implements
 // TimeZone for any contained struct that implements `Timespans`.
-fn write_timezone_file(timezone_file: &mut File, table: &Table, uncased: bool) -> io::Result<()> {
+fn write_timezone_file(
+    timezone_file: &mut File,
+    table: &Table,
+    uncased: bool,
+    time_range: Option<TimestampRange>,
+) -> io::Result<()> {
     let zones = table
         .zonesets
         .keys()
@@ -234,6 +241,10 @@ impl defmt::Format for Tz {{
         }
         let zone_name = convert_bad_chars(zone);
         let timespans = table.timespans(zone).unwrap();
+        let timespans = match time_range.as_ref() {
+            Some(range) => range.trim_timespans(timespans),
+            None => timespans,
+        };
         writeln!(
             timezone_file,
             "        const {zone}: FixedTimespanSet = FixedTimespanSet {{
@@ -488,6 +499,126 @@ mod filter {
     }
 }
 
+#[allow(unused)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum TimestampRange {
+    Start(i64),
+    End(i64),
+    StartEnd(i64, i64),
+}
+
+#[allow(unused)]
+impl TimestampRange {
+    fn from_env() -> Option<Self> {
+        #[cfg(not(feature = "filter-by-range"))]
+        return None;
+
+        #[cfg(feature = "filter-by-range")]
+        match env::var(TIME_RANGE_ENV_VAR_NAME) {
+                Ok(val) => {
+                    let val = val.trim();
+                    if val.is_empty() {
+                        return None;
+                    }
+
+                    let timestamp_range = Self::parse(val).unwrap_or_else(|err| {
+                        panic!(
+                            "The value '{val:?}' for environment variable {TIME_RANGE_ENV_VAR_NAME} is invalid, err={err}"
+                        )
+                    });
+                    Some(timestamp_range)
+                }
+                Err(env::VarError::NotPresent) => None,
+                Err(env::VarError::NotUnicode(s)) => panic!(
+                    "The value '{s:?}' for environment variable {TIME_RANGE_ENV_VAR_NAME} is not valid Unicode"
+                ),
+            }
+    }
+
+    fn parse(input: &str) -> Result<Self, String> {
+        let input = input.trim();
+        if input.is_empty() {
+            return Err("value is empty".to_string());
+        }
+
+        let (start_str, end_str) = if let Some((start, end)) = input.split_once("..") {
+            (start.trim(), end.trim())
+        } else {
+            return Err(
+                "expected Rust-style timestamp range with `..`, e.g. 0..2147483648".to_string(),
+            );
+        };
+
+        let start = if start_str.is_empty() {
+            None
+        } else if let Ok(start) = start_str.parse::<i64>() {
+            Some(start)
+        } else {
+            return Err(format!("invalid start timestamp: {start_str:?}"));
+        };
+
+        let end = if end_str.is_empty() {
+            None
+        } else if let Ok(end) = end_str.parse::<i64>() {
+            Some(end)
+        } else {
+            return Err(format!("invalid end timestamp: {end_str:?}"));
+        };
+
+        match (start, end) {
+                (Some(start), Some(end)) if start >= end => Err(format!(
+                    "range must be non-empty; got start={start}, end={end}"
+                )),
+                (Some(start), Some(end)) => Ok(TimestampRange::StartEnd(start, end)),
+                (Some(start), None) => Ok(TimestampRange::Start(start)),
+                (None, Some(end)) => Ok(TimestampRange::End(end)),
+                (None, None) => Err(format!(
+                    "timestamp range {input:?} must have at least a start or end value, e.g. 0.. or ..2147483648"
+                )),
+            }
+    }
+
+    fn lower_timestamp(&self) -> Option<i64> {
+        match self {
+            TimestampRange::Start(start) => Some(*start),
+            TimestampRange::End(_) => None,
+            TimestampRange::StartEnd(start, _) => Some(*start),
+        }
+    }
+
+    fn upper_timestamp(&self) -> Option<i64> {
+        match self {
+            TimestampRange::Start(_) => None,
+            TimestampRange::End(end) => Some(*end),
+            TimestampRange::StartEnd(_, end) => Some(*end),
+        }
+    }
+
+    fn trim_timespans(&self, timespans: FixedTimespanSet) -> FixedTimespanSet {
+        let mut first = timespans.first;
+        let mut rest = Vec::new();
+        let low = self.lower_timestamp();
+        let high = self.upper_timestamp();
+
+        for (at, span) in timespans.rest {
+            if let Some(low) = low {
+                if at <= low {
+                    first = span;
+                    continue;
+                }
+            }
+            if let Some(high) = high {
+                if at >= high {
+                    break;
+                }
+            }
+            rest.push((at, span));
+        }
+
+        FixedTimespanSet { first, rest }
+    }
+}
+
 fn detect_iana_db_version() -> String {
     let root = env::var("CARGO_MANIFEST_DIR").expect("no Cargo build context");
     let path = Path::new(&root).join(Path::new("tz/NEWS"));
@@ -509,7 +640,7 @@ fn detect_iana_db_version() -> String {
     unreachable!("no version found")
 }
 
-pub fn main(dir: &Path, _filter: bool, _uncased: bool) {
+pub fn main(dir: &Path, _filter: bool, _filter_by_range: bool, _uncased: bool) {
     let mut table = TableBuilder::new();
 
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| String::new()));
@@ -530,9 +661,15 @@ pub fn main(dir: &Path, _filter: bool, _uncased: bool) {
         filter::maybe_filter_timezone_table(&mut table);
     }
 
+    let time_range = if _filter_by_range {
+        TimestampRange::from_env()
+    } else {
+        None
+    };
+
     let timezone_path = dir.join("timezones.rs");
     let mut timezone_file = File::create(timezone_path).unwrap();
-    write_timezone_file(&mut timezone_file, &table, _uncased).unwrap();
+    write_timezone_file(&mut timezone_file, &table, _uncased, time_range).unwrap();
 
     let directory_path = dir.join("directory.rs");
     let mut directory_file = File::create(directory_path).unwrap();

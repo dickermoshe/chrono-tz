@@ -8,7 +8,7 @@ fn codegen() {
     let old_timezones = fs::read_to_string(root.join("timezones.rs")).unwrap();
 
     fs::create_dir_all(&root).unwrap();
-    chrono_tz_build::main(&root, false, false);
+    chrono_tz_build::main(&root, false, false, false);
     let new_directory = fs::read_to_string(root.join("directory.rs")).unwrap();
     let new_timezones = fs::read_to_string(root.join("timezones.rs")).unwrap();
 

@@ -135,10 +135,18 @@
 mod serde;
 
 mod binary_search;
-#[cfg(not(any(feature = "case-insensitive", feature = "filter-by-regex")))]
+#[cfg(not(any(
+    feature = "case-insensitive",
+    feature = "filter-by-regex",
+    feature = "filter-by-range"
+)))]
 use prebuilt::directory;
 mod prebuilt;
-#[cfg(any(feature = "case-insensitive", feature = "filter-by-regex"))]
+#[cfg(any(
+    feature = "case-insensitive",
+    feature = "filter-by-regex",
+    feature = "filter-by-range"
+))]
 mod directory {
     #![allow(
         dead_code,
@@ -149,9 +157,17 @@ mod directory {
     include!(concat!(env!("OUT_DIR"), "/directory.rs"));
 }
 mod timezone_impl;
-#[cfg(not(any(feature = "case-insensitive", feature = "filter-by-regex")))]
+#[cfg(not(any(
+    feature = "case-insensitive",
+    feature = "filter-by-regex",
+    feature = "filter-by-range"
+)))]
 use prebuilt::timezones;
-#[cfg(any(feature = "case-insensitive", feature = "filter-by-regex"))]
+#[cfg(any(
+    feature = "case-insensitive",
+    feature = "filter-by-regex",
+    feature = "filter-by-range"
+))]
 mod timezones {
     #![allow(non_camel_case_types, clippy::unreadable_literal)]
     include!(concat!(env!("OUT_DIR"), "/timezones.rs"));

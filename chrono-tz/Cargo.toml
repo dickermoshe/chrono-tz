@@ -43,6 +43,7 @@ std = []
 defmt = ["dep:defmt"]
 serde = ["dep:serde_core"]
 filter-by-regex = ["chrono-tz-build", "chrono-tz-build/filter-by-regex"]
+filter-by-range = ["chrono-tz-build", "chrono-tz-build/filter-by-range"]
 case-insensitive = ["dep:uncased", "chrono-tz-build", "chrono-tz-build/case-insensitive", "phf/uncased"]
 
 [build-dependencies]
