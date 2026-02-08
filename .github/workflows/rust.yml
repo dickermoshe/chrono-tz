@@ -40,6 +40,9 @@ jobs:
       - name: Run regex tests
         run: bin/test-regex-filtering.sh
 
+      - name: Run range tests
+        run: bash bin/test-range-filtering.sh
+
       - name: Check with no default features
         run: cargo check --no-default-features --color=always
 
